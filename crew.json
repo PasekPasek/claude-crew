@@ -1,0 +1,10 @@
+{
+  "max_parallel": 3,
+  "max_repairs": 1,
+  "permission_mode": "auto",
+  "write": {
+    "worker": ["*"],
+    "tester": ["test/*", "tests/*", "*.test.*", "*.spec.*"],
+    "docs":   ["docs/*", "README.md"]
+  }
+}
