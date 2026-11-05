@@ -36,4 +36,15 @@ setup tester
 out=$(write_input Write "$CREW_WORKTREE/src/a.test.ts" | guard); check "guard: tester test file allowed" test -z "$out"
 out=$(write_input Write "$CREW_WORKTREE/src/a.ts" | guard);   check "guard: tester source denied" denied "$out"
 
+# --- steer ---
+steer() { echo '{"tool_name":"Read"}' | "$CREW_HOME/hooks/steer.sh"; }
+ctx() { jq -r '.hookSpecificOutput.additionalContext // ""' <<<"$1" 2>/dev/null; }
+setup worker
+out=$(steer); check "steer: nothing to say" test -z "$out"
+echo "Stay on the login test." >> "$CREW_TASK_DIR/steer.md"
+out=$(steer); check "steer: new line delivered" contains "$(ctx "$out")" "Stay on the login test."
+out=$(steer); check "steer: delivered once" test -z "$out"
+echo 24 > "$CREW_TASK_DIR/.calls"
+out=$(steer); check "steer: reminder on 25th call" contains "$(ctx "$out")" "report what you ran"
+
 finish
