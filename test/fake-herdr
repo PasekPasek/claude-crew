@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Stands in for herdr in tests: records argv, answers the calls crew makes.
+echo "$*" >> "${FAKE_HERDR_LOG:?}"
+case "$1 $2" in
+  "pane split") echo '{"result":{"pane":{"pane_id":"w1:p9"}}}' ;;
+  "pane get") [[ -z ${FAKE_HERDR_DEAD:-} ]] ;;
+  *) exit 0 ;;
+esac

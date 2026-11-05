@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+# crew — start, steer, watch and stop Claude Code agents in Herdr panes.
+# Files under .agents/ are the only channel between agents. See docs/specs/.
+set -euo pipefail
+CREW_HOME=${CREW_HOME:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}
+export CREW_HOME
+HERDR=${CREW_HERDR:-herdr}
+. "$CREW_HOME/hooks/lib.sh"
+
+die() { echo "crew: $1" >&2; echo "next: $2" >&2; exit 1; }
+root() { git rev-parse --show-toplevel 2>/dev/null || die "not inside a git repository" "cd into your project"; }
+cfg() { jq -r "$1" "$CREW_HOME/crew.json"; }
+agent_model() { sed -n 's/^model:[[:space:]]*//p' "$CREW_HOME/agents/crew-$1.md" | head -n1; }
+pane_alive() { [[ -n ${1:-} ]] && "$HERDR" pane get "$1" >/dev/null 2>&1; }
+task_dir() { echo "$CREW_ROOT/.agents/tasks/$1"; }
+
+cmd_help() {
+  cat <<'EOF'
+crew init                                   prepare this repo (gitignore, vision/styleguide stubs, board hook)
+crew spawn <id> --role R [--model M] [--branch B]   start an agent on .agents/tasks/<id>/ticket.md
+crew steer <id> "text"                      correct a running agent (read after its next tool call)
+crew jobs                                   table of tasks; marks dead panes failed
+crew watch                                  print a line on every status change (run under Monitor)
+crew stop <id>                              close the agent's pane; keep files and branch
+crew log <id> <event> [detail]              append to the journal (e.g. merge)
+EOF
+}
+
+cmd_init() {
+  CREW_ROOT=$(root); cd "$CREW_ROOT"
+  grep -qxF '.agents/' .gitignore 2>/dev/null || echo '.agents/' >> .gitignore
+  [[ -f vision.md ]] || printf '# Vision\n\nWhat this product is, who it is for, where it is going.\n\n## Main modules\n' > vision.md
+  [[ -f styleguide.md ]] || printf '# Styleguide\n\nRules for code here: language, naming, tests, commits, what never to do.\n' > styleguide.md
+  mkdir -p .claude .agents/tasks
+  local s=.claude/settings.local.json hook="$CREW_HOME/hooks/board.sh"
+  [[ -f $s ]] || echo '{}' > "$s"
+  jq --arg c "$hook" '
+    if any(.hooks.SessionStart[]?.hooks[]?; .command == $c) then .
+    else .hooks.SessionStart += [{hooks: [{type: "command", command: $c}]}] end' "$s" > "$s.tmp"
+  mv "$s.tmp" "$s"
+  echo "crew ready in $CREW_ROOT"
+  echo "next: open claude in this folder once and accept the trust prompt (agents' worktrees inherit it); then shape vision.md and styleguide.md with the agent (10-30 lines each)"
+}
+
+cmd_spawn() {
+  local id=${1:-} role="" model="" branch=""
+  [[ -n $id ]] || die "missing task id" "crew spawn T01-slug --role worker"
+  shift
+  while (( $# )); do
+    case $1 in
+      --role) role=${2:-}; shift 2 ;;
+      --model) model=${2:-}; shift 2 ;;
+      --branch) branch=${2:-}; shift 2 ;;
+      *) die "unknown option $1" "crew help" ;;
+    esac
+  done
+  [[ -n $role ]] || die "missing --role" "add --role worker (or scout, reviewer, ...)"
+  [[ -f $CREW_HOME/agents/crew-$role.md ]] || die "no agent crew-$role" "add $CREW_HOME/agents/crew-$role.md"
+  CREW_ROOT=$(root); export CREW_ROOT
+  local dir; dir=$(task_dir "$id")
+  [[ -f $dir/ticket.md ]] || die "no ticket at $dir/ticket.md" "write the ticket first (crew-plan)"
+  local st; st=$(cat "$dir/status" 2>/dev/null || echo queued)
+  [[ $st == running || $st == done ]] && die "$id is already $st" "crew jobs"
+  local running max
+  running=$( (grep -lx running "$CREW_ROOT"/.agents/tasks/*/status 2>/dev/null || true) | wc -l)
+  max=$(cfg .max_parallel)
+  (( running < max )) || die "limit of $max running agents reached" "wait for a running task (crew jobs)"
+
+  # A new run starts clean; the previous report is kept for the coordinator.
+  [[ -f $dir/result.md ]] && mv "$dir/result.md" "$dir/result.prev.md"
+  rm -f "$dir/.strikes" "$dir/.calls" "$dir/.steer-seen" "$dir/ended"
+
+  local wt=$CREW_ROOT/.agents/worktrees/$id
+  if [[ ! -d $wt ]]; then
+    if crew_writes "$role"; then
+      branch=${branch:-crew/$id}
+      if git -C "$CREW_ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
+        git -C "$CREW_ROOT" worktree add -q "$wt" "$branch"
+      else
+        git -C "$CREW_ROOT" worktree add -q -b "$branch" "$wt"
+      fi
+    else
+      git -C "$CREW_ROOT" worktree add -q --detach "$wt" "${branch:-HEAD}"
+    fi
+  fi
+
+  local anchor=(--current --direction right) last out pane
+  last=$(cat "$CREW_ROOT/.agents/last-pane" 2>/dev/null || true)
+  pane_alive "$last" && anchor=("$last" --direction down)
+  out=$("$HERDR" pane split "${anchor[@]}" --cwd "$wt" --no-focus \
+        --env "CREW_ROOT=$CREW_ROOT" --env "CREW_TASK_DIR=$dir" --env "CREW_ROLE=$role" \
+        --env "CREW_WORKTREE=$wt" --env "CREW_HOME=$CREW_HOME") \
+    || die "herdr could not open a pane" "run crew from a pane inside Herdr"
+  pane=$(jq -r '.result.pane.pane_id' <<<"$out")
+  echo "$pane" > "$CREW_ROOT/.agents/last-pane"
+
+  local name args
+  name=$(tr 'A-Z' 'a-z' <<<"$id" | tr -c 'a-z0-9_\n-' '-' | cut -c1-32)
+  args=(--agent "crew-$role" --permission-mode "$(cfg .permission_mode)" --settings "$CREW_HOME/hooks/worker.json")
+  [[ -n $model ]] && args+=(--model "$model")
+  "$HERDR" agent start "$name" --kind claude --pane "$pane" --timeout 60000 -- "${args[@]}" >/dev/null \
+    || die "the agent did not start in pane $pane" "look at pane $pane (e.g. accept the folder-trust dialog), then crew spawn $id --role $role again"
+
+  echo "$role" > "$dir/role"; echo "${model:-$(agent_model "$role")}" > "$dir/model"
+  echo "$branch" > "$dir/branch"; echo "$pane" > "$dir/pane"
+  date -Iseconds > "$dir/started"; echo running > "$dir/status"
+  crew_journal "$id" spawn "role=$role model=$(cat "$dir/model") pane=$pane branch=${branch:--}"
+
+  local first="You are on crew task $id. Ticket: $dir/ticket.md. Read $CREW_ROOT/vision.md and $CREW_ROOT/styleguide.md first."
+  [[ -n $branch ]] && first+=" Branch: $branch."
+  [[ $role == reviewer && -f $CREW_ROOT/CODING_STANDARDS.md ]] && first+=" Coding standards: $CREW_ROOT/CODING_STANDARDS.md."
+  first+=" When you finish, write your report to $dir/result.md."
+  "$HERDR" agent prompt "$name" "$first" >/dev/null
+
+  echo "started $id ($role, $(cat "$dir/model")) in pane $pane"
+  echo "next: crew watch reports when $dir/status changes"
+}
+
+main() {
+  local cmd=${1:-help}; shift || true
+  case $cmd in
+    init) cmd_init "$@" ;;
+    spawn) cmd_spawn "$@" ;;
+    help|-h|--help) cmd_help ;;
+    *) die "unknown command $cmd" "crew help" ;;
+  esac
+}
+main "$@"
