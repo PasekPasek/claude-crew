@@ -39,4 +39,33 @@ ticket T03-a; ticket T04-b
 "$crew" spawn T03-a --role scout >/dev/null 2>&1
 out=$("$crew" spawn T04-b --role scout 2>&1); check "spawn: parallel limit" contains "$out" "limit of 3"
 
+# --- steer ---
+out=$("$crew" steer T01-login "Keep the change small." 2>&1); check "steer: ok" contains "$out" "steered T01-login"
+check "steer: file" grep -qx "Keep the change small." .agents/tasks/T01-login/steer.md
+out=$("$crew" steer T04-b "x" 2>&1); check "steer: only running" contains "$out" "not running"
+
+# --- jobs ---
+out=$("$crew" jobs 2>&1)
+check "jobs: header" contains "$out" "TASK"
+check "jobs: row" contains "$out" "T01-login"
+FAKE_HERDR_DEAD=1 "$crew" jobs >/dev/null 2>&1
+check "jobs: dead pane failed" grep -qx failed .agents/tasks/T03-a/status
+check "jobs: failure journaled" grep -q "T03-a failed pane closed" .agents/journal.log
+
+# --- stop ---
+out=$("$crew" stop T02-review 2>&1); check "stop: ok" contains "$out" "stopped T02-review"
+check "stop: pane closed" grep -q "pane close w1:p9" "$FAKE_HERDR_LOG"
+check "stop: read-only worktree removed" test ! -d .agents/worktrees/T02-review
+check "stop: write worktree kept" test -d .agents/worktrees/T01-login
+
+# --- log ---
+"$crew" log T01-login merge abc1234 >/dev/null 2>&1
+check "log: merge journaled" grep -q "T01-login merge abc1234" .agents/journal.log
+
+# --- watch ---
+echo running > .agents/tasks/T04-b/status
+( sleep 2; echo done > .agents/tasks/T04-b/status; echo "ANSWER: here" > .agents/tasks/T04-b/result.md ) &
+out=$(CREW_WATCH_INTERVAL=1 timeout 5 "$crew" watch 2>&1 || true)
+check "watch: reports change" contains "$out" "T04-b done ANSWER: here"
+
 finish

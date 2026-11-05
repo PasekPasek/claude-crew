@@ -116,11 +116,96 @@ cmd_spawn() {
   echo "next: crew watch reports when $dir/status changes"
 }
 
+cmd_steer() {
+  local id=${1:-} text=${2:-}
+  [[ -n $id && -n $text ]] || die "usage: crew steer <id> \"text\"" "crew steer T01-slug \"stay on the failing test\""
+  CREW_ROOT=$(root); export CREW_ROOT
+  local dir; dir=$(task_dir "$id")
+  [[ $(cat "$dir/status" 2>/dev/null) == running ]] || die "$id is not running" "crew jobs"
+  printf '%s\n' "$text" >> "$dir/steer.md"
+  crew_journal "$id" steer "$text"
+  echo "steered $id"
+  echo "next: the agent reads it after its next tool call"
+}
+
+cmd_jobs() {
+  CREW_ROOT=$(root); export CREW_ROOT
+  local fmt='%-26s %-9s %-7s %-8s %4s  %s\n' now any=0 dir id st min end
+  now=$(date +%s)
+  printf "$fmt" TASK ROLE MODEL STATUS MIN RESULT
+  for dir in "$CREW_ROOT"/.agents/tasks/*/; do
+    [[ -f $dir/ticket.md ]] || continue
+    any=1; id=$(basename "$dir"); st=$(cat "$dir/status" 2>/dev/null || echo queued)
+    if [[ $st == running ]] && ! pane_alive "$(cat "$dir/pane" 2>/dev/null)"; then
+      st=failed; echo failed > "$dir/status"; date -Iseconds > "$dir/ended"
+      crew_journal "$id" failed "pane closed while running"
+    fi
+    min=-
+    if [[ -f $dir/started ]]; then
+      end=$now; [[ -f $dir/ended ]] && end=$(date -d "$(cat "$dir/ended")" +%s)
+      min=$(( (end - $(date -d "$(cat "$dir/started")" +%s)) / 60 ))
+    fi
+    printf "$fmt" "$id" "$(cat "$dir/role" 2>/dev/null || echo -)" "$(cat "$dir/model" 2>/dev/null || echo -)" \
+      "$st" "$min" "$(head -n1 "$dir/result.md" 2>/dev/null | cut -c1-60)"
+  done
+  if (( ! any )); then echo "next: no tasks yet; plan them with crew-plan"
+  elif grep -qx done "$CREW_ROOT"/.agents/tasks/*/status 2>/dev/null; then echo "next: review or merge done tasks; crew stop <id> closes their panes"
+  else echo "next: wait for running tasks (crew watch)"; fi
+}
+
+cmd_watch() {
+  CREW_ROOT=$(root)
+  declare -A seen=()
+  local f id st
+  while :; do
+    for f in "$CREW_ROOT"/.agents/tasks/*/status; do
+      [[ -f $f ]] || continue
+      id=$(basename "$(dirname "$f")"); st=$(cat "$f")
+      if [[ ${seen[$id]+x} && ${seen[$id]} != "$st" ]]; then
+        echo "$id $st $(head -n1 "$(dirname "$f")/result.md" 2>/dev/null)"
+      fi
+      seen[$id]=$st
+    done
+    sleep "${CREW_WATCH_INTERVAL:-5}"
+  done
+}
+
+cmd_stop() {
+  local id=${1:-}; [[ -n $id ]] || die "missing task id" "crew stop T01-slug"
+  CREW_ROOT=$(root); export CREW_ROOT
+  local dir role; dir=$(task_dir "$id")
+  [[ -d $dir ]] || die "no task $id" "crew jobs"
+  "$HERDR" pane close "$(cat "$dir/pane" 2>/dev/null)" >/dev/null 2>&1 || true
+  if [[ $(cat "$dir/status" 2>/dev/null) == running ]]; then
+    echo failed > "$dir/status"; date -Iseconds > "$dir/ended"
+  fi
+  role=$(cat "$dir/role" 2>/dev/null || true)
+  if [[ -n $role ]] && ! crew_writes "$role"; then
+    git -C "$CREW_ROOT" worktree remove --force "$CREW_ROOT/.agents/worktrees/$id" 2>/dev/null || true
+  fi
+  crew_journal "$id" stop "pane closed"
+  echo "stopped $id"
+  echo "next: crew jobs"
+}
+
+cmd_log() {
+  (( $# >= 2 )) || die "usage: crew log <id> <event> [detail]" "crew log T01-slug merge abc1234"
+  CREW_ROOT=$(root); export CREW_ROOT
+  crew_journal "$@"
+  echo "logged $1 $2"
+  echo "next: crew jobs"
+}
+
 main() {
   local cmd=${1:-help}; shift || true
   case $cmd in
     init) cmd_init "$@" ;;
     spawn) cmd_spawn "$@" ;;
+    steer) cmd_steer "$@" ;;
+    jobs) cmd_jobs "$@" ;;
+    watch) cmd_watch "$@" ;;
+    stop) cmd_stop "$@" ;;
+    log) cmd_log "$@" ;;
     help|-h|--help) cmd_help ;;
     *) die "unknown command $cmd" "crew help" ;;
   esac
