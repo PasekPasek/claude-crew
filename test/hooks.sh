@@ -47,4 +47,27 @@ out=$(steer); check "steer: delivered once" test -z "$out"
 echo 24 > "$CREW_TASK_DIR/.calls"
 out=$(steer); check "steer: reminder on 25th call" contains "$(ctx "$out")" "report what you ran"
 
+# --- stop-gate ---
+gate() { echo '{"stop_hook_active":false}' | "$CREW_HOME/hooks/stop-gate.sh"; }
+blocked() { [[ $(jq -r '.decision' <<<"$1" 2>/dev/null) == block ]]; }
+setup worker
+out=$(gate); check "gate: no report blocks" blocked "$out"
+echo "all good" > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: wrong first line blocks" blocked "$out"
+check "gate: reason shows contract" contains "$out" "DONE"
+printf 'DONE abc1234\n\n## What changed\nx\n' > "$CREW_TASK_DIR/result.md"
+rm -f "$CREW_TASK_DIR/.strikes"
+out=$(gate); check "gate: worker needs Checks run" blocked "$out"
+printf 'DONE abc1234\n\n## Checks run\nnpm test: 12 passed\n' > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: valid report passes" test -z "$out"
+check "gate: status done" grep -qx done "$CREW_TASK_DIR/status"
+check "gate: done journaled" grep -q "T01-x done DONE abc1234" "$CREW_ROOT/.agents/journal.log"
+setup scout
+printf 'ANSWER: auth lives in src/auth\n' > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: scout needs no Checks run" test -z "$out"
+setup reviewer
+gate >/dev/null; gate >/dev/null; out=$(gate)
+check "gate: third strike lets it stop" test -z "$out"
+check "gate: third strike marks failed" grep -qx failed "$CREW_TASK_DIR/status"
+
 finish
