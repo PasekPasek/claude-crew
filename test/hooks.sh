@@ -70,4 +70,16 @@ gate >/dev/null; gate >/dev/null; out=$(gate)
 check "gate: third strike lets it stop" test -z "$out"
 check "gate: third strike marks failed" grep -qx failed "$CREW_TASK_DIR/status"
 
+# --- board ---
+setup worker
+echo "# T01" > "$CREW_TASK_DIR/ticket.md"; echo "w1:p1" > "$CREW_TASK_DIR/pane"
+crew_journal T01-x spawn "role=worker" 2>/dev/null || (. "$CREW_HOME/hooks/lib.sh"; crew_journal T01-x spawn "role=worker")
+out=$(cd "$CREW_ROOT" && CREW_HERDR=$here/fake-herdr FAKE_HERDR_LOG=/dev/null "$CREW_HOME/hooks/board.sh" <<<'{}')
+check "board: context has table" contains "$(jq -r '.hookSpecificOutput.additionalContext' <<<"$out")" "T01-x"
+check "board: context has journal" contains "$out" "spawn"
+out=$(cd "$(mktemp -d)" && "$CREW_HOME/hooks/board.sh" <<<'{}'); check "board: silent outside crew repos" test -z "$out"
+
+# --- worker.json ---
+check "settings: valid json" jq -e '.hooks.PreToolUse and .hooks.PostToolUse and .hooks.Stop' "$CREW_HOME/hooks/worker.json"
+
 finish
