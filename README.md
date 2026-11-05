@@ -6,9 +6,9 @@ worktree, with the model its role needs. Agents talk only through files. Hooks e
 what a role may write, what a final report must contain, and how the coordinator steers a running
 worker.
 
-> **Status: design stage.** The design is in
-> [`docs/specs/2026-11-03-claude-crew-design.md`](docs/specs/2026-11-03-claude-crew-design.md).
-> The steps below describe how the finished tool is used; the implementation plan comes next.
+> **Status: working (day 1).** Roles shipped: scout, worker, reviewer. The other five roles in the
+> design follow the same agent template. Design: [`docs/specs/2026-11-03-claude-crew-design.md`](docs/specs/2026-11-03-claude-crew-design.md).
+> The process in one page: [`docs/how-i-work.md`](docs/how-i-work.md).
 
 Inspired by [Limen](https://github.com/overment/limen) (© 2026 Adam Gospodarczyk, MIT) and the
 MEGA.dev lessons. This is an independent, simplified adaptation for Claude Code, not a port.
@@ -24,8 +24,8 @@ MEGA.dev lessons. This is an independent, simplified adaptation for Claude Code,
 ```bash
 git clone git@github.com:PasekPasek/claude-crew.git ~/projects/claude-crew
 cd ~/projects/claude-crew
-./install.sh          # symlinks skills/* into ~/.claude/skills and bin/crew into ~/.local/bin
-crew --help
+./install.sh          # links skills, agents and the crew CLI
+crew help
 ```
 
 ## Start in a project (once per project)
@@ -41,14 +41,19 @@ crew init
 - creates `vision.md` and `styleguide.md` stubs if they are missing;
 - adds the coordinator hook (board summary at session start) to `.claude/settings.local.json`.
 
+Then open `claude` in the project root once and accept the trust prompt. Agents run in worktrees
+under `.agents/worktrees/`, and they inherit that trust; an untrusted repo stops every agent at the
+dialog.
+
 ## Files you fill in
 
 | File | Where | What to write | Size |
 |---|---|---|---|
 | `vision.md` | project root | What the product is, who it is for, where it is going, a short map of the main modules. Every worker reads it first. | 10–30 lines |
 | `styleguide.md` | project root | Code rules the agents must follow: language, naming, tests, commit style, what never to do. Every worker reads it first. | 10–30 lines |
-| `roles.json` | this repo (or `.crew/roles.json` in a project to override) | Model per role, which paths each role may write, `max_parallel`. Optional: the defaults work. | — |
-| `roles/<role>.md` | this repo | The prompt for a role. Add a file and a row in `roles.json` to add a role. Optional. | ≤ 40 lines |
+| `CODING_STANDARDS.md` | project root | Optional. Rules only the reviewer enforces. | short |
+| `crew.json` | this repo | `max_parallel`, `max_repairs`, `permission_mode`, write globs per role. Optional: the defaults work. | — |
+| `agents/crew-<role>.md` | this repo | A role: model, effort and tools in frontmatter, principles in the body. Add a file to add a role. Optional. | ≤ 40 lines |
 
 Shape `vision.md` and `styleguide.md` together with the agent: ask it to read the repo and draft
 both, then cut them down. Short files get followed; long ones get ignored.
@@ -61,22 +66,25 @@ after you approve its plan.
 Open Claude Code in the project, inside Herdr, and say what you want:
 
 ```text
-Use crew-plan: add a login form with email + password validation, with tests.
+Use crew: add a login form with email + password validation, with tests.
 ```
 
 1. The coordinator shows a ticket table (id · role · goal · done when · depends on). Say "ok" or
    change it.
 2. It starts each ready ticket with `crew spawn`. A pane opens per agent; you can watch any of them.
-3. When an agent finishes, its `Stop` hook checks the report and marks the task `done`; the
-   coordinator wakes up and starts a `reviewer` (and a `tester` when behaviour changed).
+3. When an agent finishes, its `Stop` hook checks the report and marks the task `done`; `crew watch`
+   (run under Monitor) wakes the coordinator, which starts a `reviewer`.
 4. On `PASS` it shows the diff and **asks you before every merge**. On `FAIL` it tries one repair,
    then asks you.
 5. To correct a running agent, just tell the coordinator; it runs `crew steer <id> "…"` and the
    agent reads it after its next tool call.
 
-Check the state at any time with `crew jobs`.
+Check the state at any time with `crew jobs`; every step is in `.agents/journal.log`.
 
 ## Roles
+
+Shipped today: scout, worker, reviewer. The others are designed and covered by `crew.json` and the
+report contracts; each needs only its agent file.
 
 | Role | Model | Writes | Final report starts with |
 |---|---|---|---|
@@ -93,9 +101,9 @@ Check the state at any time with `crew jobs`.
 
 | Hook | Event | Rule |
 |---|---|---|
-| `guard.sh` | PreToolUse | A role writes only where `roles.json` allows; no `git push`, no writes to other tasks |
-| `steer.sh` | PostToolUse | Delivers new lines from `steer.md` to the running agent |
-| `stop-gate.sh` | Stop | No finishing without a valid `result.md`; then `status=done` |
+| `guard.sh` | PreToolUse | A role writes only inside its worktree and its `crew.json` globs; no `git push`, `reset --hard`, journal edits |
+| `steer.sh` | PostToolUse | Delivers new lines from `steer.md` to the running agent; repeats the key reminder every 25 calls |
+| `stop-gate.sh` | Stop | No finishing without a valid `result.md` (and `## Checks run` for write roles); then `status=done`; 3 strikes → `failed` |
 | `board.sh` | SessionStart (coordinator) | Injects a short summary of running and finished tasks |
 
 ## Trust boundary
