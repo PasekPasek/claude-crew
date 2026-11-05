@@ -68,4 +68,14 @@ echo running > .agents/tasks/T04-b/status
 out=$(CREW_WATCH_INTERVAL=1 timeout 5 "$crew" watch 2>&1 || true)
 check "watch: reports change" contains "$out" "T04-b done ANSWER: here"
 
+# --- failed start retry ---
+ticket T05-retry
+FAKE_HERDR_START_FAIL=1 "$crew" spawn T05-retry --role scout >/dev/null 2>&1
+check "retry: failed start keeps pane id" test -f .agents/tasks/T05-retry/pane
+check "retry: failed start not running" test ! -f .agents/tasks/T05-retry/status
+: > "$FAKE_HERDR_LOG"
+"$crew" spawn T05-retry --role scout >/dev/null 2>&1
+check "retry: stale pane closed" grep -q "pane close w1:p9" "$FAKE_HERDR_LOG"
+check "retry: second start runs" grep -qx running .agents/tasks/T05-retry/status
+
 finish

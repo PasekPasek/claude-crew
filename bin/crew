@@ -69,6 +69,8 @@ cmd_spawn() {
   # A new run starts clean; the previous report is kept for the coordinator.
   [[ -f $dir/result.md ]] && mv "$dir/result.md" "$dir/result.prev.md"
   rm -f "$dir/.strikes" "$dir/.calls" "$dir/.steer-seen" "$dir/ended"
+  # A pane left by a failed start (e.g. a dialog) is closed, so a retry does not stack panes.
+  [[ -f $dir/pane ]] && { "$HERDR" pane close "$(cat "$dir/pane")" >/dev/null 2>&1 || true; }
 
   local wt=$CREW_ROOT/.agents/worktrees/$id
   if [[ ! -d $wt ]]; then
@@ -92,6 +94,7 @@ cmd_spawn() {
         --env "CREW_WORKTREE=$wt" --env "CREW_HOME=$CREW_HOME") \
     || die "herdr could not open a pane" "run crew from a pane inside Herdr"
   pane=$(jq -r '.result.pane.pane_id' <<<"$out")
+  echo "$pane" > "$dir/pane"
   echo "$pane" > "$CREW_ROOT/.agents/last-pane"
 
   local name args
@@ -102,7 +105,7 @@ cmd_spawn() {
     || die "the agent did not start in pane $pane" "look at pane $pane (e.g. accept the folder-trust dialog), then crew spawn $id --role $role again"
 
   echo "$role" > "$dir/role"; echo "${model:-$(agent_model "$role")}" > "$dir/model"
-  echo "$branch" > "$dir/branch"; echo "$pane" > "$dir/pane"
+  echo "$branch" > "$dir/branch"
   date -Iseconds > "$dir/started"; echo running > "$dir/status"
   crew_journal "$id" spawn "role=$role model=$(cat "$dir/model") pane=$pane branch=${branch:--}"
 

@@ -4,5 +4,6 @@ echo "$*" >> "${FAKE_HERDR_LOG:?}"
 case "$1 $2" in
   "pane split") echo '{"result":{"pane":{"pane_id":"w1:p9"}}}' ;;
   "pane get") [[ -z ${FAKE_HERDR_DEAD:-} ]] ;;
+  "agent start") [[ -z ${FAKE_HERDR_START_FAIL:-} ]] ;;
   *) exit 0 ;;
 esac
