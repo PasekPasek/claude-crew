@@ -10,12 +10,12 @@ Checked 2026-11-04 with Claude Code 2.1.318 and Herdr 0.9.0.
 | 4 | Stop `decision: block` continues the turn with the reason | step 2 | PASS. The model received "Stop hook feedback: Before you stop, also say the word OSPREY." and replied `OSPREY.` |
 | 5 | `herdr pane split --env` sets env in the pane | step 3 | PASS. `echo "X=$CREW_X"` printed `X=hello` in the new pane. |
 | 6 | `herdr pane get` fails for a closed pane | step 3 | PASS. `pane get` returned non-zero after `pane close`. |
-| 7 | Worktree inside a trusted repo opens without the trust dialog | step 4 | FAIL. `herdr agent start ... --kind claude` returned `agent_not_ready` ("blocked during startup"); the pane showed the folder-trust dialog ("Accessing workspace: .../claude-crew/.agents/worktrees/probe ... Is this a project you created or one you trust?"). The dialog was not answered. Not determined whether `~/projects/claude-crew` itself was trusted; either way a new worktree path did not inherit trust. |
+| 7 | Worktree inside a trusted repo opens without the trust dialog | step 4 + recheck 2026-11-05 | PASS, if the repo itself is trusted. A worktree in a trusted repo (`courses/10xdev/10x-warmup`) and a subfolder of it opened with no dialog. `claude-crew` had never been trusted, so its subfolder `docs/` and its worktree both asked. A trusted parent folder (`~/projects`) does not count; the repo root does. |
 | 8 | Symlinked agent files are loaded | step 5 | PASS. With `~/.claude/agents/crew-probe.md` a symlink to `/tmp/crew-probe/crew-probe.md`, `claude -p --agent crew-probe` replied `LINKED`. |
 
 ## Fallbacks used / corrections
 
 - Step 2: with `claude -p` text output only the last assistant message is printed (just `OSPREY`), so the deny reason and `PELICAN` were verified from `--output-format stream-json --verbose`. Also `claude -p` waits 3s for stdin; use `</dev/null` in scripts.
-- Fact 7 failed: the first agent in a new worktree hits the folder-trust dialog. `crew spawn` must handle `agent_not_ready` by printing `next: accept the folder-trust dialog in pane <P>, then run crew spawn again` (the Task 6 fallback in the plan). Do not rely on worktree trust inheritance.
+- Fact 7: trust the repo once (open `claude` in its root and accept). `crew init` reminds you; `crew spawn` keeps the fallback message for `agent_not_ready`.
 - No command in the plan needed a flag correction.
 - Trust is per exact path: `~/.claude.json` has `/home/ppasek/projects` trusted, yet `projects/claude-crew/.agents/worktrees/probe` still showed the dialog. The run was cut off by a session restart after step 5; the dangling `~/.claude/agents/crew-probe.md` link was removed afterwards.
