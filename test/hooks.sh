@@ -27,6 +27,7 @@ check "guard: denial journaled" grep -q "T01-x blocked" "$CREW_ROOT/.agents/jour
 out=$(bash_input "git push origin crew/T01-x" | guard);       check "guard: git push denied" denied "$out"
 out=$(bash_input "git reset --hard HEAD~1" | guard);          check "guard: reset --hard denied" denied "$out"
 out=$(bash_input "git status && git commit -m x" | guard);    check "guard: safe git allowed" test -z "$out"
+out=$(write_input Write "$CREW_WORKTREE/../../escape.txt" | guard); check "guard: dotdot escape denied" denied "$out"
 setup reviewer
 out=$(write_input Write "$CREW_WORKTREE/src/app.ts" | guard); check "guard: reviewer write denied" denied "$out"
 check "guard: reason names allowed" contains "$out" "Allowed: nothing"

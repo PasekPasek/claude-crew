@@ -16,9 +16,11 @@ deny() {
 case $tool in
   Edit|Write|NotebookEdit)
     path=$(jq -r '.tool_input.file_path // .tool_input.notebook_path // ""' <<<"$input")
-    [[ $path == "$CREW_TASK_DIR/result.md" ]] && exit 0
-    [[ $path == "$CREW_WORKTREE"/* ]] || deny "Write only inside your worktree $CREW_WORKTREE, plus your report $CREW_TASK_DIR/result.md."
-    rel=${path#"$CREW_WORKTREE"/}
+    path=$(realpath -m -- "$path")
+    wt=$(realpath -m -- "$CREW_WORKTREE")
+    [[ $path == "$(realpath -m -- "$CREW_TASK_DIR/result.md")" ]] && exit 0
+    [[ $path == "$wt"/* ]] || deny "Write only inside your worktree $CREW_WORKTREE, plus your report $CREW_TASK_DIR/result.md."
+    rel=${path#"$wt"/}
     while IFS= read -r glob; do
       # shellcheck disable=SC2053  # glob is a pattern on purpose
       [[ $rel == $glob ]] && exit 0
