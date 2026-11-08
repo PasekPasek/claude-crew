@@ -1,15 +1,45 @@
 {
   "hooks": {
     "PreToolUse": [
-      { "matcher": "Edit|Write|NotebookEdit|Bash",
-        "hooks": [{ "type": "command", "command": "\"$CREW_HOME/hooks/guard.sh\"" }] }
+      {
+        "matcher": "Edit|Write|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CREW_HOME/hooks/guard.sh\""
+          }
+        ]
+      }
     ],
     "PostToolUse": [
-      { "matcher": "*",
-        "hooks": [{ "type": "command", "command": "\"$CREW_HOME/hooks/steer.sh\"" }] }
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CREW_HOME/hooks/steer.sh\""
+          }
+        ]
+      }
     ],
     "Stop": [
-      { "hooks": [{ "type": "command", "command": "\"$CREW_HOME/hooks/stop-gate.sh\"" }] }
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CREW_HOME/hooks/stop-gate.sh\""
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
     ]
   }
 }
