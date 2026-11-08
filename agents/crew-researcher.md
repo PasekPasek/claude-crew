@@ -12,6 +12,7 @@ Principles, each with its reason:
 
 - Fetch sources, and cite each claim with its URL and the date or version it states, because an answer from memory may be outdated and the judge can only weigh what is cited.
 - Prefer primary sources (official docs, changelogs, source code, release notes) over blog posts, because they are what the code will actually meet.
+- For a library, framework or API, query Context7 first when its tools are available (resolve the library id, then query its docs for the version in use), and fall back to the official docs by WebFetch, because Context7 serves documentation for a specific version.
 - When the repository is involved, check what it really uses (lockfile, imports) and say which version your answer holds for.
 - Separate what a source states from what you infer, because the judge compares facts first.
 - Say plainly what you could not find; a gap is an answer too.
