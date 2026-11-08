@@ -6,8 +6,7 @@ worktree, with the model its role needs. Agents talk only through files. Hooks e
 what a role may write, what a final report must contain, and how the coordinator steers a running
 worker.
 
-> **Status: working; field-tested on a 7-ticket project ([notes](docs/field-test-2026-11-08.md)).** Roles shipped: scout, worker, reviewer. The other five roles in the
-> design follow the same agent template. Design: [`docs/specs/2026-11-03-claude-crew-design.md`](docs/specs/2026-11-03-claude-crew-design.md).
+> **Status: working; field-tested on a 7-ticket project ([notes](docs/field-test-2026-11-08.md)).** All eight roles ship as agent files. Design: [`docs/specs/2026-11-03-claude-crew-design.md`](docs/specs/2026-11-03-claude-crew-design.md).
 > The process in one page: [`docs/how-i-work.md`](docs/how-i-work.md).
 
 Inspired by [Limen](https://github.com/overment/limen) (© 2026 Adam Gospodarczyk, MIT) and the
@@ -63,36 +62,70 @@ after you approve its plan.
 
 ## How you work
 
-Open Claude Code in the project, inside Herdr, and say what you want:
+The whole flow, from an empty idea to merged code:
 
 ```text
-Use crew: add a login form with email + password validation, with tests.
+ idea ──► (brainstorming / grilling) ──► spec ──► crew-plan ──► tickets ──► crew-run ──► merged code
+          optional, for vague or big goals         you approve             you approve each merge
 ```
 
-1. The coordinator shows a ticket table (id · role · goal · done when · depends on). Say "ok" or
-   change it.
-2. It starts each ready ticket with `crew spawn`. A pane opens per agent; you can watch any of them.
-3. When an agent finishes, its `Stop` hook checks the report and marks the task `done`; `crew watch`
-   (run under Monitor) wakes the coordinator, which starts a `reviewer`.
-4. On `PASS` it shows the diff and **asks you before every merge**. On `FAIL` it tries one repair,
+### 1. `crew init`: prepare the project (once)
+
+Described above: it adds `.agents/` to `.gitignore`, creates `vision.md` and `styleguide.md` stubs,
+installs the board hook and warns about permission rules that would stop agents. It starts no agent
+and plans nothing. Fill in `vision.md` and `styleguide.md` before the first plan: every agent reads
+them first, and the reviewer judges against them.
+
+### 2. Shape the goal (optional, for vague or big goals)
+
+crew plans well from a clear goal. When the goal is still fuzzy or large, shape it first in the
+same session with one of these skills (they are not part of crew; any skill that ends in a written
+spec works):
+
+| Skill | What it does | Use it when |
+|---|---|---|
+| `brainstorming` | Asks you questions one at a time, proposes 2–3 approaches, writes a design spec | you know the problem, not the solution |
+| `grilling` | Cross-examines your plan, one hard question per weak spot, until it holds | you have a plan and want it stress-tested |
+| a PRD or your own notes | — | the spec already exists |
+
+End with a file, not a conversation: the spec is what crew reads.
+
+```text
+Use brainstorming on: <goal>. Write the spec to docs/specs/<date>-<topic>.md and stop there.
+```
+
+### 3. Plan: the `crew-plan` skill
+
+```text
+Use crew: plan from docs/specs/<date>-<topic>.md.       (or simply: Use crew: <a clear goal>)
+```
+
+The coordinator (your session) then:
+
+1. plans from the spec without re-interviewing you, citing it in each ticket;
+2. asks a **scout** (haiku) one question about the repo if it does not know the area; sends an outside
+   question (a library, an API) to two **researchers** on different models and a **judge**; sends a
+   design decision with real alternatives to an **advisor**, and shows you the recommendation;
+3. splits the goal into tracer-bullet tickets: thin, end-to-end slices one agent can finish in one
+   fresh context, each with runnable acceptance criteria, a "Blocked by" edge, a role and a model;
+   when two halves are built in parallel, the first ticket is the contract between them;
+4. splits a goal bigger than about eight tickets into milestones and plans one at a time;
+5. shows you the ticket table and iterates until you say ok. **Only then** it writes
+   `.agents/tasks/<id>/ticket.md` files.
+
+### 4. Run: the `crew-run` skill
+
+1. It starts each ready ticket with `crew spawn`. A pane opens per agent; you can watch any of them.
+2. When an agent finishes, its `Stop` hook checks the report and marks the task `done`; `crew watch`
+   (run under Monitor) wakes the coordinator, which closes the pane and starts a **reviewer**
+   (optionally a **tester** first).
+3. On `PASS` it shows the diff and **asks you before every merge**. On `FAIL` it tries one repair,
    then asks you.
-5. To correct a running agent, just tell the coordinator; it runs `crew steer <id> "…"` and the
+4. To correct a running agent, just tell the coordinator; it runs `crew steer <id> "…"` and the
    agent reads it after its next tool call.
+5. After the code tickets merge, a **docs** ticket can bring the README up to date.
 
 Check the state at any time with `crew jobs`; every step is in `.agents/journal.log` (`crew journal`).
-
-### Bigger goals: brainstorm or grill first
-
-crew plans well from a clear goal. For a vague or large one, shape it first in the same session, then
-hand the result to crew:
-
-```text
-Use brainstorming (or grilling) on: <goal>. Write the spec to docs/specs/<date>-<topic>.md and stop there.
-Use crew: plan from docs/specs/<date>-<topic>.md.
-```
-
-`crew-plan` plans from that spec instead of re-interviewing you. A goal bigger than about eight tickets is
-split into milestones first, and each milestone gets its own approved plan.
 
 ### Permission prompts
 
@@ -104,28 +137,36 @@ Code still applies **deny > ask > allow across all settings files**, so a rule l
 
 ## Roles
 
-Shipped today: scout, worker, reviewer. The others are designed and covered by `crew.json` and the
-report contracts; each needs only its agent file.
+Each role is one file in `agents/`. The model is a default: `crew spawn --model` overrides it per
+ticket, so a routine review can run on sonnet and only the core on opus.
 
-| Role | Model | Writes | Final report starts with |
-|---|---|---|---|
-| scout | haiku | nothing | `ANSWER:` |
-| researcher ×2 | sonnet + opus | nothing | `VERDICT:` |
-| judge | opus | nothing | `DIVERGENCE:` / `AGREE:` |
-| advisor | opus | nothing | `RECOMMEND:` |
-| worker | sonnet | its worktree | `DONE <sha>` / `BLOCKED:` |
-| tester | sonnet | test files | `PASS <sha>` / `FAIL <sha>` |
-| reviewer | opus | nothing | `PASS <sha>` / `FAIL <sha>` |
-| docs | haiku | `docs/**`, `README.md` | `DOCS <sha>` |
+| Role | Model | Writes | Use it when | Final report starts with |
+|---|---|---|---|---|
+| scout | haiku | nothing | the coordinator needs one fact about this repo before planning | `ANSWER:` |
+| researcher ×2 | sonnet + opus | nothing | the question is outside the repo (a library, an API); run it twice on two models | `VERDICT:` |
+| judge | opus | nothing | the two researcher reports need comparing, claim by claim | `DIVERGENCE:` / `AGREE:` |
+| advisor | opus | nothing | a design decision needs one recommendation, its tradeoff and a check | `RECOMMEND:` |
+| worker | sonnet | its worktree | a ticket needs building | `DONE <sha>` / `BLOCKED:` |
+| tester | sonnet | test files | a worker's branch needs tests it did not write itself | `PASS <sha>` / `FAIL <sha>` |
+| reviewer | opus | nothing | a branch needs a verdict against its ticket before merge | `PASS <sha>` / `FAIL <sha>` |
+| docs | haiku | `docs/**`, `README.md` | README and docs must catch up with merged code | `DOCS <sha>` |
+
+Read-only roles run in a detached worktree and write only their report. Writing roles commit on their
+own branch `crew/<id>`; `--branch B` says where that branch starts, so a tester spawned with
+`--branch crew/T03-x` builds on the worker's commits without taking over its worktree.
 
 ## Hooks
 
-| Hook | Event | Rule |
-|---|---|---|
-| `guard.sh` | PreToolUse | A role writes only inside its worktree and its `crew.json` globs; no `git push`, `reset --hard`, journal writes (reads are fine), no `pkill`/`killall` by name |
-| `steer.sh` | PostToolUse | Delivers new lines from `steer.md` to the running agent; repeats the key reminder every 25 calls |
-| `stop-gate.sh` | Stop | Delivers a steer that arrived while the agent was wrapping up; no finishing without a valid `result.md` (and `## Checks run` for write roles); then `status=done`; 3 strikes → `failed` |
-| `board.sh` | SessionStart (coordinator) | Injects a short summary of running and finished tasks |
+Hooks are small bash scripts that Claude Code runs at fixed moments of an agent's life. The model
+cannot skip them: they are how crew enforces its rules instead of only asking for them. All four
+are no-ops outside a crew task, so your own sessions are not affected.
+
+| Hook | When it runs | What it does | Why |
+|---|---|---|---|
+| `guard.sh` | before every Edit/Write/Bash (PreToolUse) | Denies, with a reason the agent reads: writes outside its worktree or outside its role's globs in `crew.json` (a reviewer writes nothing but its report, a tester only test files); `git push`, `reset --hard`, `clean -f`, `branch -D`, checking out main; writing the journal; `pkill`/`killall` | an agent cannot damage main, other agents' work or other processes, whatever it decides |
+| `steer.sh` | after every tool call (PostToolUse) | Delivers new lines from `steer.md` ("Coordinator update, it outranks the ticket"); every 25 calls repeats "stay inside the ticket, report what you ran" | the coordinator can correct a running agent without interrupting it; long runs drift less |
+| `stop-gate.sh` | when the agent wants to finish (Stop) | Delivers a steer that came while it was wrapping up; refuses to stop until `result.md` exists and its first line matches the role's contract (`DONE <sha>`, `PASS <sha>`, `ANSWER:` …) and, for writing roles, has `## Checks run`; then sets `status=done`; after 3 refusals sets `failed` | "done" always means a report the coordinator can parse, never a silent exit |
+| `board.sh` | when the coordinator session starts (SessionStart) | Injects the `crew jobs` table and the last journal lines | a new or resumed session knows what crew is doing without being told |
 
 ## Trust boundary
 

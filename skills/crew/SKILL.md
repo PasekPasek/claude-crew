@@ -1,6 +1,6 @@
 ---
 name: crew
-description: crew coordinator — run a team of Claude Code agents (scout, worker, reviewer) in Herdr panes that talk only through files. Use when the user asks to build something with crew, plan work for agents, or check on crew tasks.
+description: crew coordinator — run a team of Claude Code agents (scout, researcher, judge, advisor, worker, tester, reviewer, docs) in Herdr panes that talk only through files. Use when the user asks to build something with crew, plan work for agents, or check on crew tasks.
 ---
 
 # crew

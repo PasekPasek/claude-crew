@@ -41,6 +41,15 @@ out=$(write_input Write "$CREW_TASK_DIR/result.md" | guard);  check "guard: revi
 setup tester
 out=$(write_input Write "$CREW_WORKTREE/src/a.test.ts" | guard); check "guard: tester test file allowed" test -z "$out"
 out=$(write_input Write "$CREW_WORKTREE/src/a.ts" | guard);   check "guard: tester source denied" denied "$out"
+setup docs
+out=$(write_input Write "$CREW_WORKTREE/README.md" | guard);     check "guard: docs README allowed" test -z "$out"
+out=$(write_input Write "$CREW_WORKTREE/docs/a/b.md" | guard);   check "guard: docs nested docs allowed" test -z "$out"
+out=$(write_input Write "$CREW_WORKTREE/src/app.ts" | guard);    check "guard: docs source denied" denied "$out"
+for r in researcher judge advisor; do
+  setup "$r"
+  out=$(write_input Write "$CREW_WORKTREE/notes.md" | guard);    check "guard: $r write denied" denied "$out"
+  out=$(write_input Write "$CREW_TASK_DIR/result.md" | guard);   check "guard: $r report allowed" test -z "$out"
+done
 
 # --- steer ---
 steer() { echo '{"tool_name":"Read"}' | "$CREW_HOME/hooks/steer.sh"; }
@@ -78,6 +87,26 @@ out=$(gate); check "gate: after steer read, stop allowed" test -z "$out"
 setup scout
 printf 'ANSWER: auth lives in src/auth\n' > "$CREW_TASK_DIR/result.md"
 out=$(gate); check "gate: scout needs no Checks run" test -z "$out"
+setup researcher
+printf 'VERDICT: use fetch, not axios\n' > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: researcher verdict passes" test -z "$out"
+setup judge
+printf 'AGREE: both say fetch\n' > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: judge agree passes" test -z "$out"
+setup judge
+printf 'VERDICT: fetch\n' > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: judge needs DIVERGENCE or AGREE" blocked "$out"
+setup advisor
+printf 'RECOMMEND: one JSON file per run\n' > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: advisor recommend passes" test -z "$out"
+setup tester
+printf 'PASS abc1234\n\n## Tests added\nx\n' > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: tester needs Checks run" blocked "$out"
+printf 'FAIL abc1234\n\n## Checks run\nnpm test: 1 failed\n' > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: tester fail report passes" test -z "$out"
+setup docs
+printf 'DOCS abc1234\n\n## Checks run\nmake demo: ok\n' > "$CREW_TASK_DIR/result.md"
+out=$(gate); check "gate: docs report passes" test -z "$out"
 setup reviewer
 gate >/dev/null; gate >/dev/null; out=$(gate)
 check "gate: third strike lets it stop" test -z "$out"
@@ -91,6 +120,29 @@ out=$(cd "$CREW_ROOT" && CREW_HERDR=$here/fake-herdr FAKE_HERDR_LOG=/dev/null "$
 check "board: context has table" contains "$(jq -r '.hookSpecificOutput.additionalContext' <<<"$out")" "T01-x"
 check "board: context has journal" contains "$out" "spawn"
 out=$(cd "$(mktemp -d)" && "$CREW_HOME/hooks/board.sh" <<<'{}'); check "board: silent outside crew repos" test -z "$out"
+
+# --- agent files ---
+# Every role with a report contract has an agent file and the other way round; frontmatter is sane;
+# a role without write globs may not Edit (it still Writes its report, which guard allows).
+. "$CREW_HOME/hooks/lib.sh"
+for f in "$CREW_HOME"/agents/crew-*.md; do
+  r=$(basename "$f" .md); r=${r#crew-}
+  fm=$(awk 'NR==1&&/^---$/{on=1;next} on&&/^---$/{exit} on' "$f")
+  check "agent $r: name matches file" grep -qx "name: crew-$r" <<<"$fm"
+  check "agent $r: model set" grep -Eqx 'model: (haiku|sonnet|opus)' <<<"$fm"
+  check "agent $r: effort set" grep -Eqx 'effort: (low|medium|high)' <<<"$fm"
+  check "agent $r: has contract" crew_contract "$r"
+  first=$(crew_contract "$r" | sed 's/^\^//; s/^(//; s/[^A-Z].*//')
+  check "agent $r: report shape names contract" grep -q "^    $first" "$f"
+  if crew_writes "$r"; then
+    check "agent $r: writer keeps Edit" bash -c '! grep -q "^disallowedTools:.*Edit" <<<"$1"' _ "$fm"
+  else
+    check "agent $r: read-only has no Edit" grep -q '^disallowedTools:.*Edit' <<<"$fm"
+  fi
+done
+for r in scout researcher judge advisor worker tester reviewer docs; do
+  check "role $r: agent file exists" test -f "$CREW_HOME/agents/crew-$r.md"
+done
 
 # --- worker.json ---
 check "settings: valid json" jq -e '.hooks.PreToolUse and .hooks.PostToolUse and .hooks.Stop' "$CREW_HOME/hooks/worker.json"

@@ -9,12 +9,14 @@ Tickets that one agent can finish in one fresh context are the whole trick: shor
 
 0. Start from a written spec when there is one. If the human ran `brainstorming` or `grilling` (or wrote a PRD), plan from that document and cite it in each ticket; do not re-interview. For a goal too large for about eight tickets, split it into milestones first, show them, and plan one milestone at a time, so every plan stays reviewable.
 1. Understand the goal. If the repository or the area is unfamiliar, write one scout ticket (`T00-scout-<topic>`, holding one question), run `crew spawn T00-scout-<topic> --role scout`, and read its report when `crew watch` shows it done.
+   - A question outside the repository (a library, an API version, a known practice) goes to two researchers on different models, `T00-research-<topic>-a` and `-b` (`--model opus` on the second), then a judge ticket that names both reports. Use this only when a wrong answer would cost tickets.
+   - A design decision with real alternatives goes to one advisor ticket; show the human its recommendation before drafting slices.
 2. Draft tracer-bullet vertical slices, as the `to-tickets` skill defines them: each slice is a narrow but complete path through every layer, verifiable on its own, and small enough for one fresh context. Prefactoring comes first.
 3. Give each ticket its blocking edges. Number tickets `T01`, `T02`, … in dependency order; the id is `T<NN>-<short-slug>`.
    - When two halves must be built in parallel (e.g. backend and frontend), make the first ticket the contract between them (types, file format, API) with a fixture and a validator, so both sides build against something checkable.
    - Acceptance criteria are checks a reviewer can run: a command and its expected result, a number with a bound, a file that must exist. Avoid "works well" or "looks good".
    - Pick a model per ticket and say why: haiku for glue and docs, sonnet for most code, opus for the hard core. Reviewers too (see crew-run).
-4. Show the human a numbered list: id, title, role (worker unless there is a reason), blocked by, what it delivers. Ask whether the granularity and the edges are right. Iterate until they approve.
+4. Show the human a numbered list: id, title, role (worker unless there is a reason: tester for a slice whose risk is in edge cases, docs for a documentation-only ticket at the end), blocked by, what it delivers. Ask whether the granularity and the edges are right. Iterate until they approve.
 5. Only after approval, write `.agents/tasks/<id>/ticket.md` for each ticket from the template below and `queued` into `.agents/tasks/<id>/status`.
 
 You are done when the human has approved the list and every ticket file exists. Then load `crew-run`.

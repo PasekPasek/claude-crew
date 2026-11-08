@@ -88,6 +88,34 @@ out=$("$crew" peek T04-b 2>&1); check "peek: shows the prompt" contains "$out" "
 out=$("$crew" journal 5 2>&1);   check "journal: shows recent lines" contains "$out" "merge abc1234"
 echo working > "$FAKE_HERDR_STATUS_FILE"
 
+# --- the other five roles ---
+for st in .agents/tasks/*/status; do echo done > "$st"; done
+git -C .agents/worktrees/T01-login -c user.email=t@t -c user.name=t commit -q --allow-empty -m "T01-login work"
+work=$(git rev-parse crew/T01-login)
+ticket T06-test
+out=$("$crew" spawn T06-test --role tester --branch crew/T01-login 2>&1); check "spawn: tester" contains "$out" "started T06-test (tester, sonnet)"
+check "spawn: tester own branch" git show-ref --verify --quiet refs/heads/crew/T06-test
+check "spawn: tester starts from worker" test "$(git rev-parse crew/T06-test)" = "$work"
+check "spawn: worker branch untouched" test "$(git -C .agents/worktrees/T01-login symbolic-ref --short HEAD)" = crew/T01-login
+check "spawn: tester branch recorded" grep -qx crew/T06-test .agents/tasks/T06-test/branch
+check "spawn: tester told its base" grep -q "starts from crew/T01-login" "$FAKE_HERDR_LOG"
+ticket T07-docs
+out=$("$crew" spawn T07-docs --role docs 2>&1); check "spawn: docs" contains "$out" "started T07-docs (docs, haiku)"
+check "spawn: docs own branch" git show-ref --verify --quiet refs/heads/crew/T07-docs
+for st in .agents/tasks/*/status; do echo done > "$st"; done
+ticket T08-research-a; ticket T08-research-b; ticket T08-judge
+out=$("$crew" spawn T08-research-a --role researcher 2>&1); check "spawn: researcher" contains "$out" "(researcher, sonnet)"
+out=$("$crew" spawn T08-research-b --role researcher --model opus 2>&1); check "spawn: second researcher on opus" contains "$out" "(researcher, opus)"
+out=$("$crew" spawn T08-judge --role judge 2>&1); check "spawn: judge" contains "$out" "(judge, opus)"
+check "spawn: judge detached" test -z "$(git -C .agents/worktrees/T08-judge symbolic-ref -q HEAD)"
+check "spawn: judge no branch" bash -c '! git show-ref --verify --quiet refs/heads/crew/T08-judge'
+for st in .agents/tasks/*/status; do echo done > "$st"; done
+ticket T09-advise
+out=$("$crew" spawn T09-advise --role advisor 2>&1); check "spawn: advisor" contains "$out" "(advisor, opus)"
+ticket T10-bad
+out=$("$crew" spawn T10-bad --role tester --branch crew/nope 2>&1); check "spawn: bad base explained" contains "$out" "could not start crew/T10-bad from crew/nope"
+for st in .agents/tasks/*/status; do echo done > "$st"; done
+
 # --- failed start retry ---
 ticket T05-retry
 FAKE_HERDR_START_FAIL=1 "$crew" spawn T05-retry --role scout >/dev/null 2>&1

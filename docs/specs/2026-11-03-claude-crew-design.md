@@ -65,8 +65,8 @@ is one new agent file plus one row in `crew.json`.
 | `reviewer` | opus | read-only | Review a branch on Standards and Spec | `PASS <sha>` / `FAIL <sha>` |
 | `docs` | haiku | all (writes limited by guard) | Update docs after a merge | `DOCS <sha>` |
 
-"Read-only" means `disallowedTools: Edit, Write, NotebookEdit` in the agent frontmatter. Day 1 ships
-`scout`, `worker`, `reviewer`; the other five follow the same template.
+"Read-only" means `disallowedTools: Edit, NotebookEdit` in the agent frontmatter (Write stays for the report; guard allows only that path). Day 1 shipped
+`scout`, `worker`, `reviewer`; the other five followed on 2026-11-08 from the same template.
 
 Role prompts follow principles with reasons, not procedures, and end on a checkable completion
 criterion. Example line for `worker`: "Verify your changes in proportion to their impact, because a

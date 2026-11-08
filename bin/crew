@@ -20,6 +20,8 @@ cmd_help() {
   cat <<'EOF'
 crew init                                   prepare this repo (gitignore, vision/styleguide stubs, board hook)
 crew spawn <id> --role R [--model M] [--branch B]   start an agent on .agents/tasks/<id>/ticket.md
+                                            roles: scout researcher judge advisor worker tester reviewer docs
+                                            --branch: what a reader reviews, or where a writer's crew/<id> starts
 crew steer <id> "text"                      correct a running agent (read after its next tool call)
 crew jobs                                   table of tasks; marks dead panes failed
 crew watch                                  print a line on every status change, and when an agent
@@ -90,14 +92,20 @@ cmd_spawn() {
   # A pane left by a failed start (e.g. a dialog) is closed, so a retry does not stack panes.
   [[ -f $dir/pane ]] && { "$HERDR" pane close "$(cat "$dir/pane")" >/dev/null 2>&1 || true; }
 
-  local wt=$CREW_ROOT/.agents/worktrees/$id
+  local wt=$CREW_ROOT/.agents/worktrees/$id base=""
+  if crew_writes "$role"; then
+    # A writing role always commits on its own branch crew/<id>. --branch names where that branch
+    # starts: a tester starts from the worker's branch, which the worker's worktree still holds.
+    [[ -n $branch && $branch != "crew/$id" ]] && base=$branch
+    branch=crew/$id
+  fi
   if [[ ! -d $wt ]]; then
     if crew_writes "$role"; then
-      branch=${branch:-crew/$id}
       if git -C "$CREW_ROOT" show-ref --verify --quiet "refs/heads/$branch"; then
         git -C "$CREW_ROOT" worktree add -q "$wt" "$branch"
       else
-        git -C "$CREW_ROOT" worktree add -q -b "$branch" "$wt"
+        git -C "$CREW_ROOT" worktree add -q -b "$branch" "$wt" "${base:-HEAD}" \
+          || die "could not start $branch from ${base:-HEAD}" "check the branch name: git branch --list 'crew/*'"
       fi
     else
       git -C "$CREW_ROOT" worktree add -q --detach "$wt" "${branch:-HEAD}"
@@ -129,6 +137,7 @@ cmd_spawn() {
 
   local first="You are on crew task $id. Ticket: $dir/ticket.md. Read $CREW_ROOT/vision.md and $CREW_ROOT/styleguide.md first."
   [[ -n $branch ]] && first+=" Branch: $branch."
+  [[ -n $base ]] && first+=" It starts from $base."
   [[ $role == reviewer && -f $CREW_ROOT/CODING_STANDARDS.md ]] && first+=" Coding standards: $CREW_ROOT/CODING_STANDARDS.md."
   first+=" When you finish, write your report to $dir/result.md."
   "$HERDR" agent prompt "$name" "$first" >/dev/null
