@@ -64,10 +64,47 @@ after you approve its plan.
 
 The whole flow, from an empty idea to merged code:
 
-```text
- idea ──► (brainstorming / grilling) ──► spec ──► crew-plan ──► tickets ──► crew-run ──► merged code
-          optional, for vague or big goals         you approve             you approve each merge
+```mermaid
+flowchart TB
+    idea([💡 Your idea]) --> clear{Clear goal?}
+    clear -- "no: vague or big" --> S1
+    clear -- yes --> S2
+    S1 --> S2
+    S2 --> S3
+    S3 --> main(["✅ merged into main"])
+    main -.-> docs["📝 docs update · optional"]
+
+    subgraph S1 ["① Shape the goal · optional"]
+        direction LR
+        shape["brainstorming<br/>or grilling"] --> spec[/"📄 written spec<br/>docs/specs/…"/]
+    end
+
+    subgraph S2 ["② crew-plan"]
+        direction LR
+        plan["split into tickets<br/><i>scout · researchers + judge · advisor</i>"] --> ok1{{"👤 you approve<br/>the ticket table"}}
+        ok1 --> tickets[("📋 ticket files<br/>.agents/tasks/")]
+    end
+
+    subgraph S3 ["③ crew-run · per ticket"]
+        direction LR
+        worker["🔧 worker<br/>own worktree + branch"] -.-> tester["🧪 tester<br/><i>optional</i>"]
+        tester -.-> reviewer["🔍 reviewer"]
+        worker --> reviewer
+        reviewer -- "FAIL: one repair" --> worker
+        reviewer -- PASS --> ok2{{"👤 you approve<br/>the merge"}}
+    end
+
+    classDef human fill:#fff4d6,stroke:#d4a017,color:#5a4500
+    classDef agent fill:#e8f1ff,stroke:#3b6fd8,color:#12305e
+    classDef done fill:#e3f7e6,stroke:#2e9e4f,color:#14532d
+    classDef optional fill:#f4f4f5,stroke:#a1a1aa,color:#3f3f46,stroke-dasharray: 4 3
+    class ok1,ok2 human
+    class worker,reviewer,plan agent
+    class main done
+    class shape,tester,docs optional
 ```
+
+Yellow steps wait for you, blue ones are agents, dashed ones are optional.
 
 ### 1. `crew init`: prepare the project (once)
 
