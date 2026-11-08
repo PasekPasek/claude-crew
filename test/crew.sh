@@ -16,6 +16,11 @@ check "init: styleguide stub" test -f styleguide.md
 check "init: board hook" grep -q board.sh .claude/settings.local.json
 "$crew" init >/dev/null 2>&1
 check "init: idempotent hook" test "$(grep -c board.sh .claude/settings.local.json)" -eq 1
+fakehome=$(mktemp -d); mkdir -p "$fakehome/.claude"
+echo '{"permissions":{"ask":["Bash(git commit:*)","Bash(docker:*)"]}}' > "$fakehome/.claude/settings.json"
+out=$(HOME=$fakehome "$crew" init 2>&1); check "init: warns about ask rule" contains "$out" "Bash(git commit:*)"
+check "init: ignores unrelated ask rule" bash -c '! grep -q docker <<<"$1"' _ "$out"
+out=$(HOME=$(mktemp -d) "$crew" init 2>&1); check "init: no warning without rules" bash -c '! grep -q warning <<<"$1"' _ "$out"
 
 # --- spawn ---
 out=$("$crew" spawn T01-login --role worker 2>&1); check "spawn: needs ticket" contains "$out" "no ticket"
@@ -67,6 +72,21 @@ echo running > .agents/tasks/T04-b/status
 ( sleep 2; echo done > .agents/tasks/T04-b/status; echo "ANSWER: here" > .agents/tasks/T04-b/result.md ) &
 out=$(CREW_WATCH_INTERVAL=1 timeout 5 "$crew" watch 2>&1 || true)
 check "watch: reports change" contains "$out" "T04-b done ANSWER: here"
+
+# --- blocked agents ---
+export FAKE_HERDR_STATUS_FILE; FAKE_HERDR_STATUS_FILE=$(mktemp)
+echo running > .agents/tasks/T04-b/status; echo w1:p9 > .agents/tasks/T04-b/pane
+echo blocked > "$FAKE_HERDR_STATUS_FILE"
+out=$("$crew" jobs 2>&1); check "jobs: shows blocked" contains "$out" "blocked"
+check "jobs: next says peek" contains "$out" "crew peek"
+check "jobs: status file stays running" grep -qx running .agents/tasks/T04-b/status
+( sleep 2; echo working > "$FAKE_HERDR_STATUS_FILE" ) &
+out=$(CREW_WATCH_INTERVAL=1 timeout 5 "$crew" watch 2>&1 || true)
+check "watch: reports blocked" contains "$out" "T04-b blocked"
+check "watch: reports unblocked" contains "$out" "T04-b unblocked"
+out=$("$crew" peek T04-b 2>&1); check "peek: shows the prompt" contains "$out" "Do you want to proceed?"
+out=$("$crew" journal 5 2>&1);   check "journal: shows recent lines" contains "$out" "merge abc1234"
+echo working > "$FAKE_HERDR_STATUS_FILE"
 
 # --- failed start retry ---
 ticket T05-retry

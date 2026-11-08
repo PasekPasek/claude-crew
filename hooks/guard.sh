@@ -32,7 +32,12 @@ case $tool in
     cmd=$(jq -r '.tool_input.command // ""' <<<"$input")
     re='git[[:space:]]+(push|reset[[:space:]]+--hard|clean[[:space:]]+-[a-zA-Z]*f|branch[[:space:]]+-D|checkout[[:space:]]+(main|master)|switch[[:space:]]+(main|master))'
     [[ $cmd =~ $re ]] && deny "'${BASH_REMATCH[0]}' is not allowed for crew agents. Commit on your branch; the coordinator merges after the human agrees."
-    [[ $cmd == *journal.log* ]] && deny "The journal is written only by crew."
+    # Reading the journal is fine (docs quote it); writing, moving or deleting it is not.
+    jw='(>|tee|sed[[:space:]]+-i|truncate|rm|mv|cp)[^;&|]*journal\.log'
+    [[ $cmd =~ $jw ]] && deny "The journal is written only by crew. To read it: crew journal [lines]."
+    # Killing by name hits every matching process on the machine, other projects included.
+    kn='(^|[;&|(`[:space:]])(pkill|killall)([[:space:]]|$)'
+    [[ $cmd =~ $kn ]] && deny "Do not kill processes by name (pkill/killall): it stops other projects' processes too. Start servers on a free port, keep the PID (\$!) and kill only that PID."
     ;;
 esac
 exit 0

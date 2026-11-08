@@ -6,7 +6,7 @@ worktree, with the model its role needs. Agents talk only through files. Hooks e
 what a role may write, what a final report must contain, and how the coordinator steers a running
 worker.
 
-> **Status: working (day 1).** Roles shipped: scout, worker, reviewer. The other five roles in the
+> **Status: working; field-tested on a 7-ticket project ([notes](docs/field-test-2026-11-08.md)).** Roles shipped: scout, worker, reviewer. The other five roles in the
 > design follow the same agent template. Design: [`docs/specs/2026-11-03-claude-crew-design.md`](docs/specs/2026-11-03-claude-crew-design.md).
 > The process in one page: [`docs/how-i-work.md`](docs/how-i-work.md).
 
@@ -79,7 +79,28 @@ Use crew: add a login form with email + password validation, with tests.
 5. To correct a running agent, just tell the coordinator; it runs `crew steer <id> "…"` and the
    agent reads it after its next tool call.
 
-Check the state at any time with `crew jobs`; every step is in `.agents/journal.log`.
+Check the state at any time with `crew jobs`; every step is in `.agents/journal.log` (`crew journal`).
+
+### Bigger goals: brainstorm or grill first
+
+crew plans well from a clear goal. For a vague or large one, shape it first in the same session, then
+hand the result to crew:
+
+```text
+Use brainstorming (or grilling) on: <goal>. Write the spec to docs/specs/<date>-<topic>.md and stop there.
+Use crew: plan from docs/specs/<date>-<topic>.md.
+```
+
+`crew-plan` plans from that spec instead of re-interviewing you. A goal bigger than about eight tickets is
+split into milestones first, and each milestone gets its own approved plan.
+
+### Permission prompts
+
+Agents run with `permission_mode: auto` and crew allows `git add/commit/status/diff/log` for them. Claude
+Code still applies **deny > ask > allow across all settings files**, so a rule like
+`"ask": ["Bash(git commit:*)"]` in your `~/.claude/settings.json` stops every agent at that prompt.
+`crew init` warns about such rules. While an agent waits, `crew watch` prints `<id> blocked`,
+`crew jobs` shows `blocked`, and `crew peek <id>` shows what it asks; answer in its pane.
 
 ## Roles
 
@@ -101,9 +122,9 @@ report contracts; each needs only its agent file.
 
 | Hook | Event | Rule |
 |---|---|---|
-| `guard.sh` | PreToolUse | A role writes only inside its worktree and its `crew.json` globs; no `git push`, `reset --hard`, journal edits |
+| `guard.sh` | PreToolUse | A role writes only inside its worktree and its `crew.json` globs; no `git push`, `reset --hard`, journal writes (reads are fine), no `pkill`/`killall` by name |
 | `steer.sh` | PostToolUse | Delivers new lines from `steer.md` to the running agent; repeats the key reminder every 25 calls |
-| `stop-gate.sh` | Stop | No finishing without a valid `result.md` (and `## Checks run` for write roles); then `status=done`; 3 strikes → `failed` |
+| `stop-gate.sh` | Stop | Delivers a steer that arrived while the agent was wrapping up; no finishing without a valid `result.md` (and `## Checks run` for write roles); then `status=done`; 3 strikes → `failed` |
 | `board.sh` | SessionStart (coordinator) | Injects a short summary of running and finished tasks |
 
 ## Trust boundary

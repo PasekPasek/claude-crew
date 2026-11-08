@@ -7,6 +7,16 @@ set -uo pipefail
 cat >/dev/null
 dir=$CREW_TASK_DIR; id=$(basename "$dir")
 [[ $(cat "$dir/status" 2>/dev/null) == running ]] || exit 0
+# A steer that lands while the agent is wrapping up would never be read: deliver it now and
+# keep the agent going. This is not a strike.
+if [[ -f $dir/steer.md ]]; then
+  seen=$(cat "$dir/.steer-seen" 2>/dev/null || echo 0); total=$(wc -l < "$dir/steer.md")
+  if (( total > seen )); then
+    echo "$total" > "$dir/.steer-seen"
+    jq -n --arg r "Coordinator update arrived before you stopped (it outranks the ticket): $(tail -n +"$((seen + 1))" "$dir/steer.md") -- act on it, update your commits and report, then stop." '{decision:"block",reason:$r}'
+    exit 0
+  fi
+fi
 report=$dir/result.md
 re=$(crew_contract "$CREW_ROLE")
 problem=""

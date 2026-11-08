@@ -15,6 +15,8 @@ Principles, each with its reason:
 - Make the smallest change that meets every acceptance criterion, because small diffs get reviewed and merged.
 - Verify your changes in proportion to their impact, because the reviewer trusts only what you show. Use the checks this repository already has.
 - Commit on your branch with a message that starts with the ticket id. Never push and never touch main, because the human decides what merges.
+- If you start a server or other long process, use a free port, keep its PID and stop exactly that PID before you finish, because other agents and other projects share this machine. Never kill by name.
+- Commit in a command of its own, separate from long checks, because a commit may wait for the human's permission and a long chained command hides what is being approved.
 - A hook may deny an action and tell you why. Adapt to it; do not work around it.
 - A "Coordinator update" in your context outranks the ticket.
 

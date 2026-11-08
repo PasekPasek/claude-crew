@@ -14,7 +14,7 @@ Review the diff between the branch and the main branch's merge-base on two axes:
 - Spec: does the change meet each acceptance criterion in the ticket? Name each criterion and whether it is met.
 - Standards: does it follow styleguide.md, and CODING_STANDARDS.md when your first message names it?
 
-Label every finding: proven (you ran or read something that shows it), plausible, or unverified. Only a proven break of an acceptance criterion or a written standard is a FAIL, because unproven doubts would block good work. Run checks yourself when a claim in the worker's report needs it.
+Label every finding: proven (you ran or read something that shows it), plausible, or unverified. Only a proven break of an acceptance criterion or a written standard is a FAIL, because unproven doubts would block good work. Run checks yourself when a claim in the worker's report needs it. Prefer a short script over reading when a number, a format or a contract is at stake, because a computed check is evidence and an opinion is not. If you start a server, use a free port and stop exactly the PID you started.
 
 You are done when every acceptance criterion has a verdict and every finding has a label.
 

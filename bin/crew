@@ -12,6 +12,8 @@ root() { git rev-parse --show-toplevel 2>/dev/null || die "not inside a git repo
 cfg() { jq -r "$1" "$CREW_HOME/crew.json"; }
 agent_model() { sed -n 's/^model:[[:space:]]*//p' "$CREW_HOME/agents/crew-$1.md" | head -n1; }
 pane_alive() { [[ -n ${1:-} ]] && "$HERDR" pane get "$1" >/dev/null 2>&1; }
+# pane_status <pane> — Herdr's agent_status for the pane (working, idle, blocked, ...), or empty.
+pane_status() { [[ -n ${1:-} ]] && "$HERDR" pane get "$1" 2>/dev/null | jq -r '.result.pane.agent_status // empty' 2>/dev/null || true; }
 task_dir() { echo "$CREW_ROOT/.agents/tasks/$1"; }
 
 cmd_help() {
@@ -20,7 +22,10 @@ crew init                                   prepare this repo (gitignore, vision
 crew spawn <id> --role R [--model M] [--branch B]   start an agent on .agents/tasks/<id>/ticket.md
 crew steer <id> "text"                      correct a running agent (read after its next tool call)
 crew jobs                                   table of tasks; marks dead panes failed
-crew watch                                  print a line on every status change (run under Monitor)
+crew watch                                  print a line on every status change, and when an agent
+                                            waits on a prompt (blocked) or resumes (unblocked); run under Monitor
+crew peek <id> [lines]                      show the last lines of the agent's pane (what is it asking?)
+crew journal [lines]                        show the end of .agents/journal.log (default 40 lines)
 crew stop <id>                              close the agent's pane; keep files and branch
 crew log <id> <event> [detail]              append to the journal (e.g. merge)
 EOF
@@ -38,8 +43,21 @@ cmd_init() {
     if any(.hooks.SessionStart[]?.hooks[]?; .command == $c) then .
     else .hooks.SessionStart += [{hooks: [{type: "command", command: $c}]}] end' "$s" > "$s.tmp"
   mv "$s.tmp" "$s"
+  warn_ask_rules
   echo "crew ready in $CREW_ROOT"
   echo "next: open claude in this folder once and accept the trust prompt (agents' worktrees inherit it); then shape vision.md and styleguide.md with the agent (10-30 lines each)"
+}
+
+# Claude Code applies deny > ask > allow across all settings files, so a user-level "ask" rule
+# for git commit or npm install stops every agent at a prompt, whatever crew allows.
+warn_ask_rules() {
+  local f rules
+  for f in "$HOME/.claude/settings.json" "$HOME/.claude/settings.local.json" .claude/settings.json .claude/settings.local.json; do
+    [[ -f $f ]] || continue
+    rules=$(jq -r '.permissions.ask[]? | select(test("git (add|commit)|npm (install|ci)|pnpm|yarn"))' "$f" 2>/dev/null | paste -sd, -)
+    [[ -n $rules ]] && echo "warning: $f asks before $rules; every agent will stop at that prompt (watch shows it as blocked). Remove the rule to let agents commit unattended."
+  done
+  return 0
 }
 
 cmd_spawn() {
@@ -133,7 +151,7 @@ cmd_steer() {
 
 cmd_jobs() {
   CREW_ROOT=$(root); export CREW_ROOT
-  local fmt='%-26s %-9s %-7s %-8s %4s  %s\n' now any=0 dir id st min end
+  local fmt='%-30s %-9s %-7s %-8s %4s  %s\n' now any=0 blocked=0 dir id st min end
   now=$(date +%s)
   printf "$fmt" TASK ROLE MODEL STATUS MIN RESULT
   for dir in "$CREW_ROOT"/.agents/tasks/*/; do
@@ -142,6 +160,9 @@ cmd_jobs() {
     if [[ $st == running ]] && ! pane_alive "$(cat "$dir/pane" 2>/dev/null)"; then
       st=failed; echo failed > "$dir/status"; date -Iseconds > "$dir/ended"
       crew_journal "$id" failed "pane closed while running"
+    fi
+    if [[ $st == running && $(pane_status "$(cat "$dir/pane" 2>/dev/null)") == blocked ]]; then
+      st=blocked; blocked=1
     fi
     min=-
     if [[ -f $dir/started ]]; then
@@ -152,25 +173,46 @@ cmd_jobs() {
       "$st" "$min" "$(head -n1 "$dir/result.md" 2>/dev/null | cut -c1-60)"
   done
   if (( ! any )); then echo "next: no tasks yet; plan them with crew-plan"
+  elif (( blocked )); then echo "next: an agent waits on a prompt; crew peek <id> shows it, then tell the human"
   elif grep -qx done "$CREW_ROOT"/.agents/tasks/*/status 2>/dev/null; then echo "next: review or merge done tasks; crew stop <id> closes their panes"
   else echo "next: wait for running tasks (crew watch)"; fi
 }
 
 cmd_watch() {
   CREW_ROOT=$(root)
-  declare -A seen=()
-  local f id st
+  declare -A seen=() waiting=()
+  local f d id st ps
   while :; do
     for f in "$CREW_ROOT"/.agents/tasks/*/status; do
       [[ -f $f ]] || continue
-      id=$(basename "$(dirname "$f")"); st=$(cat "$f")
+      d=$(dirname "$f"); id=$(basename "$d"); st=$(cat "$f")
       if [[ ${seen[$id]+x} && ${seen[$id]} != "$st" ]]; then
-        echo "$id $st $(head -n1 "$(dirname "$f")/result.md" 2>/dev/null)"
+        echo "$id $st $(head -n1 "$d/result.md" 2>/dev/null)"
       fi
       seen[$id]=$st
+      # A prompt (permission, trust dialog) leaves status=running; only Herdr knows the agent waits.
+      ps=""; [[ $st == running ]] && ps=$(pane_status "$(cat "$d/pane" 2>/dev/null)")
+      if [[ $ps == blocked && -z ${waiting[$id]:-} ]]; then
+        waiting[$id]=1; echo "$id blocked waiting on a prompt (crew peek $id)"
+      elif [[ $ps != blocked && -n ${waiting[$id]:-} ]]; then
+        unset "waiting[$id]"; echo "$id unblocked"
+      fi
     done
     sleep "${CREW_WATCH_INTERVAL:-5}"
   done
+}
+
+cmd_peek() {
+  local id=${1:-} lines=${2:-25}
+  [[ -n $id ]] || die "missing task id" "crew peek T01-slug"
+  CREW_ROOT=$(root)
+  local pane; pane=$(cat "$(task_dir "$id")/pane" 2>/dev/null) || die "$id has no pane" "crew jobs"
+  "$HERDR" pane read "$pane" --lines "$lines" 2>/dev/null | grep -v '^[[:space:]]*$' || die "cannot read pane $pane" "crew jobs"
+}
+
+cmd_journal() {
+  CREW_ROOT=$(root)
+  tail -n "${1:-40}" "$CREW_ROOT/.agents/journal.log" 2>/dev/null || die "no journal yet" "crew spawn a task first"
 }
 
 cmd_stop() {
@@ -207,6 +249,8 @@ main() {
     steer) cmd_steer "$@" ;;
     jobs) cmd_jobs "$@" ;;
     watch) cmd_watch "$@" ;;
+    peek) cmd_peek "$@" ;;
+    journal) cmd_journal "$@" ;;
     stop) cmd_stop "$@" ;;
     log) cmd_log "$@" ;;
     help|-h|--help) cmd_help ;;

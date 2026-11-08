@@ -3,7 +3,10 @@
 echo "$*" >> "${FAKE_HERDR_LOG:?}"
 case "$1 $2" in
   "pane split") echo '{"result":{"pane":{"pane_id":"w1:p9"}}}' ;;
-  "pane get") [[ -z ${FAKE_HERDR_DEAD:-} ]] ;;
+  "pane get") [[ -z ${FAKE_HERDR_DEAD:-} ]] || exit 1
+              status=working; [[ -n ${FAKE_HERDR_STATUS_FILE:-} && -f $FAKE_HERDR_STATUS_FILE ]] && status=$(cat "$FAKE_HERDR_STATUS_FILE")
+              echo "{\"result\":{\"pane\":{\"pane_id\":\"$3\",\"agent_status\":\"$status\"}}}" ;;
+  "pane read") echo "Do you want to proceed?"; echo " 1. Yes" ;;
   "agent start") [[ -z ${FAKE_HERDR_START_FAIL:-} ]] ;;
   *) exit 0 ;;
 esac

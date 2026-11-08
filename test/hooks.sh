@@ -28,6 +28,12 @@ out=$(bash_input "git push origin crew/T01-x" | guard);       check "guard: git 
 out=$(bash_input "git reset --hard HEAD~1" | guard);          check "guard: reset --hard denied" denied "$out"
 out=$(bash_input "git status && git commit -m x" | guard);    check "guard: safe git allowed" test -z "$out"
 out=$(write_input Write "$CREW_WORKTREE/../../escape.txt" | guard); check "guard: dotdot escape denied" denied "$out"
+out=$(bash_input "tail -20 .agents/journal.log" | guard);      check "guard: journal read allowed" test -z "$out"
+out=$(bash_input "echo x >> .agents/journal.log" | guard);     check "guard: journal append denied" denied "$out"
+out=$(bash_input "sed -i 1d .agents/journal.log" | guard);     check "guard: journal sed -i denied" denied "$out"
+out=$(bash_input "npm run dev & sleep 5; pkill -f vite" | guard); check "guard: pkill by name denied" denied "$out"
+out=$(bash_input "killall node" | guard);                      check "guard: killall denied" denied "$out"
+out=$(bash_input "kill 4242" | guard);                         check "guard: kill by pid allowed" test -z "$out"
 setup reviewer
 out=$(write_input Write "$CREW_WORKTREE/src/app.ts" | guard); check "guard: reviewer write denied" denied "$out"
 check "guard: reason names allowed" contains "$out" "Allowed: nothing"
@@ -62,6 +68,13 @@ printf 'DONE abc1234\n\n## Checks run\nnpm test: 12 passed\n' > "$CREW_TASK_DIR/
 out=$(gate); check "gate: valid report passes" test -z "$out"
 check "gate: status done" grep -qx done "$CREW_TASK_DIR/status"
 check "gate: done journaled" grep -q "T01-x done DONE abc1234" "$CREW_ROOT/.agents/journal.log"
+setup worker
+printf 'DONE abc1234\n\n## Checks run\nok\n' > "$CREW_TASK_DIR/result.md"
+echo "Also update the README." >> "$CREW_TASK_DIR/steer.md"
+out=$(gate); check "gate: unread steer blocks stop" blocked "$out"
+check "gate: unread steer delivered" contains "$out" "Also update the README."
+check "gate: unread steer is not a strike" test ! -f "$CREW_TASK_DIR/.strikes"
+out=$(gate); check "gate: after steer read, stop allowed" test -z "$out"
 setup scout
 printf 'ANSWER: auth lives in src/auth\n' > "$CREW_TASK_DIR/result.md"
 out=$(gate); check "gate: scout needs no Checks run" test -z "$out"

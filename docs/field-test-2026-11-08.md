@@ -13,7 +13,7 @@ models haiku/sonnet/opus. All tickets merged with human approval.
 - Carrying a reviewer's "For the coordinator" notes into the *next* ticket (not only into repairs)
   saved a round trip each time.
 
-## Gaps found (to fix)
+## Gaps found, and how they were fixed
 1. **Blocked agents are invisible.** An agent waiting on a permission prompt keeps `status=running`.
    The coordinator only learned about it from the human. Workaround used: a Monitor polling
    `herdr pane list` for `agent_status == "blocked"`. Fix: `crew watch` should emit `<id> blocked` /
@@ -31,3 +31,15 @@ models haiku/sonnet/opus. All tickets merged with human approval.
    consider a guard rule. Also: workers left dev servers running (port 5173) after finishing.
 6. **Coordinator hygiene:** close panes (`crew stop`) right after `done`/`PASS`; the human noticed idle
    panes before the coordinator did. Worth a line in `crew-run`.
+
+## Fixes (same day)
+1. `crew watch` prints `<id> blocked` / `<id> unblocked` from Herdr's `agent_status`; `crew jobs` shows
+   `blocked`; new `crew peek <id>` prints what the agent is asking.
+2. `crew init` warns about user `ask` rules for git add/commit and package installs; README explains the
+   precedence. (A hook `allow` was not used: it would silently override a safety rule the human chose.)
+3. `guard.sh` denies only journal writes; new `crew journal [lines]` reads it.
+4. `stop-gate.sh` delivers unread steer lines and keeps the agent going (not a strike).
+5. `guard.sh` denies `pkill`/`killall`; worker and reviewer rules: free port, own PID, stop it.
+6. `crew-run`: stop panes on done, react to `blocked`, carry review notes into later tickets, reviewer
+   model by risk. `crew-plan`: start from a brainstorming/grilling spec, milestones for big goals,
+   contract-first ticket for parallel halves, runnable acceptance criteria, model per ticket.
